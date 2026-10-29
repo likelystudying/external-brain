@@ -1,0 +1,17 @@
+# Your personal data (tasks, timers, appointments)
+data.json
+*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Streamlit secrets, if you add any later
+.streamlit/secrets.toml
+
+# OS files
+.DS_Store
+Thumbs.db
