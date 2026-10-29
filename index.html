@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>External Brain</title>
+<meta name="description" content="A small ADHD helper: today's tasks, a visual timer, leave-on-time alarms, and quick fixes when you're stuck.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 720px column of white rounded cards on pale green-grey, matching Turn Meter. The timer disc is the centrepiece of the Timer view. */
+:root{
+  --paper:#F1F3EF; --card:#FFFFFF; --raise:#F7F9F5;
+  --ink:#101613; --ink-2:#3C4742; --muted:#6B7871; --faint:#B4BEB8;
+  --line:#E2E7E0; --line-2:#EDF0EA; --line-hi:#CBD6CE;
+  --jade:#0F7B5A; --jade-hi:#12946B; --jade-soft:#DCEFE5; --on-jade:#FFFFFF;
+  --flag:#C2493C; --flag-soft:#FBEAE7; --flag-line:#EBD7D4;
+  --amber:#93661F; --amber-soft:#F4EBD8; --amber-line:#E3D3B0;
+  --inverse:#101613; --on-inverse:#F1F3EF;
+  --shadow:0 1px 2px rgba(16,22,19,.05), 0 10px 30px rgba(16,22,19,.06);
+  --sans:'Archivo',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'DM Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0E1210; --card:#161A17; --raise:#1C211D;
+    --ink:#E7EDE9; --ink-2:#BCC6C0; --muted:#8C968F; --faint:#5E6863;
+    --line:#282E2A; --line-2:#20251F; --line-hi:#3A423C;
+    --jade:#18A87A; --jade-hi:#22C08D; --jade-soft:#12332A; --on-jade:#04140E;
+    --flag:#E4796A; --flag-soft:#38211E; --flag-line:#4C2B26;
+    --amber:#D6A54A; --amber-soft:#332918; --amber-line:#4A3C22;
+    --inverse:#E7EDE9; --on-inverse:#0E1210;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0E1210; --card:#161A17; --raise:#1C211D;
+  --ink:#E7EDE9; --ink-2:#BCC6C0; --muted:#8C968F; --faint:#5E6863;
+  --line:#282E2A; --line-2:#20251F; --line-hi:#3A423C;
+  --jade:#18A87A; --jade-hi:#22C08D; --jade-soft:#12332A; --on-jade:#04140E;
+  --flag:#E4796A; --flag-soft:#38211E; --flag-line:#4C2B26;
+  --amber:#D6A54A; --amber-soft:#332918; --amber-line:#4A3C22;
+  --inverse:#E7EDE9; --on-inverse:#0E1210;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+
+*,*::before,*::after{ box-sizing:border-box }
+[hidden]{ display:none !important }
+html{ -webkit-text-size-adjust:100% }
+body{ margin:0; background:var(--paper); color:var(--ink); font-family:var(--sans); font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased }
+p,h1,h2,ol{ margin:0 }
+button,input,textarea{ font:inherit; color:inherit }
+:is(button,a,input,textarea):focus-visible{ outline:2px solid var(--jade); outline-offset:2px }
+
+.wrap{
+  max-width:720px; margin:0 auto;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-top:max(26px, env(safe-area-inset-top, 0px));
+  padding-bottom:max(80px, env(safe-area-inset-bottom, 0px));
+}
+.eyebrow{ font-weight:600; text-transform:uppercase; letter-spacing:.1em; font-size:10.5px; color:var(--muted) }
+.num{ font-family:var(--mono); font-variant-numeric:tabular-nums }
+
+/* Top bar */
+.topbar{ display:flex; align-items:center; justify-content:space-between; gap:10px 12px; flex-wrap:wrap; margin-bottom:22px }
+.mark{ font-weight:700; letter-spacing:-.02em; font-size:19px; color:var(--ink); text-decoration:none }
+.tabs{ display:flex; gap:2px; padding:3px; border-radius:999px; background:var(--line-2) }
+.tab{ font-weight:600; font-size:13px; color:var(--muted); text-decoration:none; padding:7px 14px; border-radius:999px; transition:color .12s, background-color .12s }
+.tab:hover{ color:var(--ink-2) }
+.tab.on{ background:var(--card); color:var(--jade); box-shadow:0 1px 2px rgba(16,22,19,.07) }
+.linkbtn{ background:none; border:0; color:var(--muted); font-family:inherit; font-weight:600; font-size:13px; cursor:pointer; padding:7px 4px; border-radius:6px; text-decoration:none }
+.linkbtn:hover{ color:var(--jade) }
+
+/* Running strips */
+.runbar{ display:flex; align-items:center; gap:10px; margin-bottom:10px; padding:9px 12px; border:1px solid var(--jade); border-radius:11px; background:var(--jade-soft) }
+.runbar.ev{ border-color:var(--line); background:var(--card) }
+.runbar.ev.warn{ border-color:var(--amber-line); background:var(--amber-soft) }
+.runbar.ev.late{ border-color:var(--flag-line); background:var(--flag-soft) }
+.runbar-dot{ width:8px; height:8px; border-radius:999px; background:var(--jade); flex:none; animation:breathe 2s ease-in-out infinite }
+.runbar.ev .runbar-dot{ background:var(--muted); animation:none }
+.runbar.ev.warn .runbar-dot{ background:var(--amber); animation:breathe 2s ease-in-out infinite }
+.runbar.ev.late .runbar-dot{ background:var(--flag); animation:breathe 1s ease-in-out infinite }
+.runbar-what{ flex:1 1 auto; min-width:0; display:flex; align-items:baseline; gap:8px; color:inherit; text-decoration:none }
+.runbar-name{ font-weight:600; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.runbar-what:hover .runbar-name{ text-decoration:underline; text-underline-offset:2px }
+.runbar-sub{ font-size:12px; color:var(--ink-2); white-space:nowrap }
+.runbar-time{ font-family:var(--mono); font-size:13px; white-space:nowrap }
+.runbar-btn{ font-family:inherit; font-weight:600; font-size:12px; padding:5px 12px; border:1px solid var(--jade); border-radius:7px; background:var(--card); color:var(--jade); cursor:pointer; white-space:nowrap }
+.runbar-btn:hover{ background:var(--jade); color:var(--on-jade) }
+.strips{ margin-bottom:6px }
+.strips:empty{ display:none }
+
+/* Alarm */
+.banner{ display:flex; align-items:center; justify-content:space-between; gap:10px 14px; flex-wrap:wrap; border:1px solid var(--amber-line); background:var(--amber-soft); border-radius:14px; padding:14px 16px; margin-bottom:16px; font-size:14px; color:var(--ink) }
+.banner .btn{ background:var(--card) }
+.banner.ring{ font-weight:600 }
+
+/* Cards */
+.face{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:24px 24px 22px; box-shadow:var(--shadow) }
+.face-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px }
+.face-top > div{ min-width:0 }
+.plate-name{ font-weight:700; font-size:22px; letter-spacing:-.02em; line-height:1.2; overflow-wrap:anywhere; margin-top:6px }
+.plate-name.idle{ color:var(--faint) }
+.plate-sub{ margin-top:5px; font-size:13.5px; color:var(--muted); overflow-wrap:anywhere }
+.state{ font-weight:600; text-transform:uppercase; letter-spacing:.09em; font-size:10px; padding:6px 11px; border-radius:999px; background:var(--line-2); color:var(--muted); white-space:nowrap }
+.state.on{ background:var(--jade-soft); color:var(--jade) }
+.state.done{ background:var(--amber-soft); color:var(--amber) }
+.panel{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; box-shadow:var(--shadow) }
+.hint{ font-size:13px; color:var(--muted); line-height:1.55 }
+.sec{ margin-top:30px }
+.sec-head{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:0 2px 12px }
+.sec-head .num{ font-size:11px; color:var(--muted) }
+
+/* Forms and buttons */
+.field{ display:grid; gap:7px; margin-top:18px; min-width:0 }
+.field > label{ font-weight:600; text-transform:uppercase; letter-spacing:.1em; font-size:10.5px; color:var(--muted) }
+.field.first{ margin-top:0 }
+.inp{ width:100%; min-width:0; background:var(--raise); border:1px solid var(--line); border-radius:9px; padding:11px 13px; color:var(--ink); font-size:16px }
+.inp:focus{ border-color:var(--jade); background:var(--card); outline:none }
+textarea.inp{ resize:vertical; min-height:96px; line-height:1.5 }
+.inp::placeholder{ color:var(--faint) }
+.grid2{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0 12px }
+.controls{ display:flex; gap:9px; margin-top:20px; flex-wrap:wrap }
+.btn{ font-family:inherit; font-weight:600; font-size:14px; padding:12px 20px; border-radius:9px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; flex:1; min-width:112px; transition:background-color .15s, border-color .15s, color .15s }
+.btn:hover{ background:var(--raise); border-color:var(--line-hi) }
+.btn.primary{ background:var(--jade); color:var(--on-jade); border-color:var(--jade) }
+.btn.primary:hover{ background:var(--jade-hi); border-color:var(--jade-hi) }
+.btn.sm{ flex:0 0 auto; min-width:0; padding:8px 14px; font-size:13px }
+.btn[disabled]{ opacity:.5; cursor:default }
+
+/* Task rows */
+.trow{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:12px; align-items:center; padding:11px 0; border-bottom:1px solid var(--line-2) }
+.trow:first-child{ padding-top:0 }
+.trow:last-child{ border-bottom:0; padding-bottom:0 }
+.pick{ width:32px; height:32px; border-radius:999px; border:1.5px dashed var(--line-hi); background:none; color:var(--muted); font-family:var(--mono); font-size:14px; cursor:pointer; display:grid; place-items:center; padding:0 }
+.pick:hover{ border-color:var(--jade); color:var(--jade) }
+.pick.on{ border:0; background:var(--jade); color:var(--on-jade) }
+.pick[disabled]{ opacity:.35; cursor:default }
+.row-title{ font-size:14.5px; font-weight:600; overflow-wrap:anywhere }
+.row-meta{ font-size:12.5px; color:var(--muted); margin-top:2px; overflow-wrap:anywhere }
+.x{ background:none; border:0; color:var(--faint); cursor:pointer; font-size:20px; line-height:1; padding:4px 8px 7px; border-radius:6px }
+.x:hover{ color:var(--flag); background:var(--flag-soft) }
+
+/* Timer */
+.disc-wrap{ display:grid; place-items:center; margin-top:14px }
+.disc{ width:min(240px, 64vw); height:auto; display:block }
+.disc .face-c{ fill:var(--raise); stroke:var(--line) }
+.disc .wedge{ fill:var(--jade) }
+.disc .tk{ stroke:var(--faint); stroke-width:2 }
+.clock{ margin-top:14px; text-align:center; font-family:var(--mono); font-weight:500; font-size:clamp(44px, 13vw, 60px); font-variant-numeric:tabular-nums; letter-spacing:-.035em; line-height:1 }
+.clock.idle{ color:var(--faint) }
+.clock-note{ margin-top:8px; text-align:center; font-size:13.5px; color:var(--muted) }
+.after{ margin-top:16px; text-align:center; font-size:14px; color:var(--ink-2) }
+.presets{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:9px; margin-top:20px }
+.presets .btn{ min-width:0 }
+.custom{ display:flex; gap:9px; align-items:center; margin-top:12px; font-size:13px; color:var(--muted) }
+.custom .inp{ width:84px; padding:8px 10px }
+.times{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; margin-top:6px }
+.times .t-val{ font-family:var(--mono); font-size:24px; font-variant-numeric:tabular-nums; margin-top:4px }
+.ev-state{ margin-top:14px; font-size:13.5px; color:var(--ink-2) }
+.ev-state.warn{ color:var(--amber) } .ev-state.late{ color:var(--flag) }
+.err{ margin-top:12px; font-size:13px; color:var(--flag) }
+
+/* Stuck */
+.chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:14px }
+.chip{ border:1px solid var(--line); background:var(--card); border-radius:999px; padding:8px 14px; font-weight:500; font-size:13.5px; cursor:pointer; text-align:left; transition:border-color .15s, background-color .15s }
+.chip:hover{ border-color:var(--line-hi) }
+.chip[aria-pressed="true"]{ border-color:var(--jade); background:var(--jade-soft); color:var(--jade) }
+.why{ font-weight:600; font-size:16px; line-height:1.45; margin-top:8px }
+.steps{ padding-left:1.3em; display:grid; gap:6px; margin-top:12px; font-size:14.5px; color:var(--ink-2) }
+.tip + .tip{ margin-top:14px; padding-top:14px; border-top:1px solid var(--line-2) }
+.tip b{ font-weight:600 }
+
+/* Footer */
+.foot{ margin-top:40px; display:flex; flex-direction:column; align-items:center; gap:12px }
+.theme{ display:flex; gap:2px; padding:2px; border-radius:999px; background:var(--line-2) }
+.theme-btn{ display:grid; place-items:center; width:32px; height:32px; padding:0; border:0; border-radius:999px; background:none; color:var(--muted); cursor:pointer; transition:color .12s, background-color .12s }
+.theme-btn:hover{ color:var(--ink-2) }
+.theme-btn.on{ background:var(--card); color:var(--jade); box-shadow:0 1px 2px rgba(16,22,19,.07) }
+.theme-btn svg{ width:15px; height:15px }
+.check{ display:inline-flex; gap:8px; align-items:center; cursor:pointer; font-size:13px; color:var(--muted) }
+.check input{ width:16px; height:16px; margin:0; accent-color:var(--jade) }
+.foot-row{ display:flex; gap:6px 16px; flex-wrap:wrap; justify-content:center; align-items:center; font-size:13px; color:var(--muted) }
+.foot .panel{ width:100%; text-align:left }
+.backup-in{ font-family:var(--mono); font-size:12px }
+.confirm{ display:flex; align-items:center; justify-content:space-between; gap:10px 14px; flex-wrap:wrap; padding:10px 12px; margin-top:12px; border-radius:9px; background:var(--amber-soft); font-size:13.5px }
+.confirm .controls{ margin-top:0 }
+
+.toast{ position:fixed; left:50%; transform:translateX(-50%); bottom:calc(24px + env(safe-area-inset-bottom, 0px)); z-index:50; background:var(--inverse); color:var(--on-inverse); border-radius:11px; padding:13px 16px; font-size:13.5px; box-shadow:0 12px 32px rgba(16,22,19,.22); width:max-content; max-width:calc(100vw - 32px) }
+
+@keyframes breathe{ 0%,100%{ opacity:1 } 50%{ opacity:.35 } }
+@media (max-width:480px){
+  .face{ padding:20px 18px 18px }
+  .panel{ padding:16px }
+  .times .t-val{ font-size:20px }
+}
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{ animation:none !important; transition:none !important }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar" id="topbar"></header>
+  <div id="alarm"></div>
+  <div class="strips" id="strips"></div>
+  <main id="view"></main>
+  <footer class="foot" id="foot"></footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(() => {
+'use strict';
+
+const KEY = 'external-brain.v1';
+const MAX_TODAY = 3;
+
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const now = () => Date.now();
+const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+const pad = n => String(n).padStart(2, '0');
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const clock = ts => { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const mmss = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${pad(s % 60)}`; };
+const dur = ms => { const t = Math.max(0, Math.round(ms / 60000)), h = Math.floor(t / 60), m = t % 60; return h ? `${h} h ${m} min` : `${m} min`; };
+const dayISO = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dayLabel = ts => new Date(ts).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
+
+/* ---------- Wording. Edit these to change what the app says. ---------- */
+// key: [label, minutes, kind]
+const TIMERS = {
+  start2: ['2-min start', 2, 'start'], focus25: ['Focus 25 min', 25, 'work'],
+  break5: ['Break 5 min', 5, 'break'], reward15: ['Reward 15 min', 15, 'free'],
+  rest10: ['Rest 10 min', 10, 'rest'], phone15: ['Phone 15 min', 15, 'free'],
+  cool20: ['Cool down 20 min', 20, 'cool'], me60: ['Me time 60 min', 60, 'free']
+};
+const TIMER_BUTTONS = ['start2', 'focus25', 'break5', 'reward15'];
+// kind: [what to say when the timer ends, timer to suggest next or null]
+const AFTER = {
+  start: ['Keep going? Switch to 25 minutes. Stopping here still counts.', 'focus25'],
+  work: ['Nice work. Take a 5-minute break, or a reward that has an end.', 'break5'],
+  break: ["Break's over. Back to your Now task.", 'start2'],
+  rest: ["No choosing needed. Just do the top task on today's list.", 'start2'],
+  cool: ['Reply once you feel calm.', null],
+  free: ["That's it. Put the phone down and move on.", null]
+};
+// A button is [label, 'timer', timer key] or [label, 'page', 'today' | 'timer'].
+const SITUATIONS = [
+  { label: "I can't start", terms: 'Task paralysis · Wall of Awful',
+    why: "The task isn't a physical action yet, or you're afraid of how it will turn out.",
+    steps: ['Write one physical step you can start in 30 seconds.', "Do it for 2 minutes. You're allowed to stop after that.", 'If you dread it, write down the outcome you fear, then do a deliberately rough version.'],
+    buttons: [['2-min start', 'timer', 'start2'], ['Write the next step', 'page', 'today']] },
+  { label: "I'm frozen", terms: 'ADHD shutdown · Doom pile',
+    why: "You're out of capacity. Pushing makes it worse, so stop choosing first.",
+    steps: ['Rest for 10 minutes without choosing anything.', 'Then write down everything on your mind, for 10 minutes at most.', 'Pick only 3 for today. Make one of them quick.'],
+    buttons: [['Rest 10 min', 'timer', 'rest10'], ['Write it all down', 'page', 'today']] },
+  { label: 'Time disappears', terms: 'Time blindness · “Dopamine addiction”',
+    why: 'Your sense of time is weak, and feeds with no end eat it up.',
+    steps: ['Start a timer before you pick up your phone.', 'Rewards come after work, and must have an end: one video, one episode.', 'While you work, keep the phone in another room.'],
+    buttons: [['Phone 15 min', 'timer', 'phone15']] },
+  { label: 'Waiting for an appointment', terms: 'Waiting mode',
+    why: 'Your brain keeps guarding the appointment. Hand that job to two alarms.',
+    steps: ['Plan around when you leave, not when it starts.', 'Let two alarms do the watching: one to wrap up, one to leave.', 'Until the first alarm, work freely.'],
+    buttons: [['Set a leave time', 'page', 'timer']] },
+  { label: "I can't focus", terms: 'Understimulation · Sensory overload · Body doubling',
+    why: 'Too little and too much stimulation both hurt focus.',
+    steps: ['Bored? Add stimulation: stand, walk, or play music without lyrics.', 'Overloaded? Reduce it: earplugs, dimmer lights, notifications off.', "Can't do it alone? Work alongside someone, even on a silent call."],
+    buttons: [['Focus 25 min', 'timer', 'focus25']] },
+  { label: 'Criticism hurts', terms: 'RSD (rejection sensitive dysphoria)',
+    why: "At the peak of a feeling you can't think it through. Wait first, reframe after.",
+    steps: ["Don't reply for 20 minutes.", 'Read this: “They criticized the work, not my worth.”', 'Reply once you feel calm.'],
+    buttons: [['Cool down 20 min', 'timer', 'cool20']] },
+  { label: "I don't want to go to bed", terms: 'Revenge bedtime procrastination',
+    why: 'If night is your only free time, going to sleep means giving it up.',
+    steps: ['Count back from your wake-up time to set a bedtime.', "Protect some me time before bed, so you don't have to steal it later.", 'Charge your phone outside the bedroom.'],
+    buttons: [['Me time 60 min', 'timer', 'me60']] }
+];
+const MORE_TIPS = [
+  ['Out of sight, out of mind', 'Object permanence', 'Keep only the things that need action where you can see them. If everything is visible, nothing stands out.'],
+  ['Paying extra for forgetting', 'ADHD tax', 'Automate payments, give keys and wallet a fixed spot, and check it all once a month.'],
+  ['Craving a quick reward', 'Dopamine menu', 'Pick 3 small rewards in advance: a glass of water, a stretch, a 5-minute walk.']
+];
+
+/* ---------- Storage ---------- */
+let storageOK = true;
+
+function valid(d) {
+  return d && Array.isArray(d.tasks) && d.tasks.every(t => t && typeof t.title === 'string');
+}
+function normalize(d) {
+  d.settings = Object.assign({ sound: true, theme: 'system' }, d.settings || {});
+  d.tasks.forEach(t => { if (typeof t.id !== 'string') t.id = uid(); t.next = t.next || ''; t.done = !!t.done; });
+  d.today = Array.isArray(d.today) ? d.today.filter(i => typeof i === 'string') : [];
+  d.draft = typeof d.draft === 'string' ? d.draft : '';
+  if (d.timer && !(typeof d.timer.end === 'number' && typeof d.timer.start === 'number' && AFTER[d.timer.kind])) d.timer = null;
+  if (d.event && typeof d.event.start !== 'number') d.event = null;
+  if (d.event && !Array.isArray(d.event.fired)) d.event.fired = [];
+  return d;
+}
+function blank() { return { tasks: [], today: [], draft: '', timer: null, event: null, settings: { sound: true, theme: 'system' } }; }
+function seed() {
+  const d = blank();
+  const mk = (title, next) => ({ id: uid(), title, next, done: false, sample: true });
+  d.tasks = [mk('Send the invoice', 'Open the laptop and open the invoice'), mk('Laundry', ''), mk('Book the dentist', '')];
+  d.today = [d.tasks[0].id, d.tasks[1].id];
+  return d;
+}
+function load() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(KEY);
+    localStorage.setItem(KEY + '.probe', '1');
+    localStorage.removeItem(KEY + '.probe');
+  } catch (e) { storageOK = false; }
+  if (raw) {
+    try { const d = JSON.parse(raw); if (valid(d)) return normalize(d); } catch (e) {}
+    return blank();
+  }
+  return normalize(seed());
+}
+function save() {
+  if (!storageOK) return;
+  try { localStorage.setItem(KEY, JSON.stringify(state)); }
+  catch (e) { storageOK = false; render(); }
+}
+
+let state = load();
+const ui = {
+  addOpen: false, sit: null, form: null, formErr: '', alarm: null,
+  backupOpen: false, backupText: '', backupMsg: '', restorePending: null
+};
+
+/* ---------- Model ---------- */
+const taskBy = id => state.tasks.find(t => t.id === id) || null;
+const openTasks = () => state.tasks.filter(t => !t.done);
+const todayTasks = () => state.today.map(taskBy).filter(t => t && !t.done);
+const focusTask = () => todayTasks()[0] || null;
+function cleanToday() { state.today = todayTasks().map(t => t.id).slice(0, MAX_TODAY); }
+function eventTimes(ev) { const leave = ev.start - ev.travel * 60000; return { wrap: leave - ev.prep * 60000, leave, start: ev.start }; }
+function evPhase(t = now()) {
+  const ev = state.event; if (!ev) return 'none';
+  const { wrap, leave, start } = eventTimes(ev);
+  return t < wrap ? 'before' : t < leave ? 'wrap' : t < start ? 'leave' : 'past';
+}
+const timerRunning = (t = now()) => !!(state.timer && t < state.timer.end);
+
+/* ---------- Routing ---------- */
+function route() { const h = location.hash.slice(1); return h === 'timer' || h === 'stuck' ? h : 'today'; }
+function go(page) {
+  const target = page === 'today' ? '#today' : '#' + page;
+  if (location.hash === target) { render(); window.scrollTo(0, 0); }
+  else location.hash = target;
+}
+window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+
+/* ---------- Actions ---------- */
+function startTimer(key) {
+  const [label, min, kind] = TIMERS[key];
+  const t = now();
+  state.timer = { label, kind, start: t, end: t + min * 60000, notified: false };
+  ui.alarm = null; save(); keepAwake(true); go('timer');
+}
+function startCustom() {
+  const m = Math.min(180, Math.max(1, Math.round(Number($('#custom-min')?.value) || 10)));
+  const t = now();
+  state.timer = { label: `Timer ${m} min`, kind: 'work', start: t, end: t + m * 60000, notified: false };
+  ui.alarm = null; save(); keepAwake(true); go('timer');
+}
+function addTasks() {
+  const lines = String($('#draft')?.value ?? state.draft).split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) { toast('Write at least one task first.'); return; }
+  lines.forEach(l => state.tasks.push({ id: uid(), title: l.slice(0, 200), next: '', done: false }));
+  state.draft = ''; ui.addOpen = false; save(); render();
+  toast(`Added ${plural(lines.length, 'task')}. Tap + to put up to ${MAX_TODAY} on today.`);
+}
+function togglePick(id) {
+  cleanToday();
+  if (state.today.includes(id)) state.today = state.today.filter(i => i !== id);
+  else if (state.today.length >= MAX_TODAY) { toast(`Up to ${MAX_TODAY} for today. Remove one first.`); return; }
+  else state.today.push(id);
+  save(); render();
+}
+function finishTask(id) {
+  const t = taskBy(id); if (!t) return;
+  t.done = true; t.doneAt = now(); cleanToday(); save(); render(); toast('Done!');
+}
+function deleteTask(id) {
+  const t = taskBy(id); if (!t) return;
+  state.tasks = state.tasks.filter(x => x !== t); cleanToday(); save(); render(); toast(`Deleted “${t.title}”.`);
+}
+function setEvent() {
+  const f = ui.form; const start = new Date(`${f.date}T${f.time}`).getTime();
+  if (!f.date || !f.time || isNaN(start)) { ui.formErr = 'Enter a date and a start time.'; render(); return; }
+  if (start <= now()) { ui.formErr = 'That time has already passed. Check the date and start time.'; render(); return; }
+  state.event = { title: f.title.trim() || 'Appointment', start, travel: Math.max(0, Math.round(Number(f.travel) || 0)), prep: Math.max(0, Math.round(Number(f.prep) || 0)), fired: [] };
+  ui.formErr = ''; save(); render(); toast('Alarms set.');
+}
+function formDefaults() {
+  const ev = state.event;
+  if (ev) return { title: ev.title, date: dayISO(new Date(ev.start)), time: clock(ev.start), travel: ev.travel, prep: ev.prep };
+  const d = new Date(now() + 90 * 60000); d.setMinutes(0, 0, 0);
+  return { title: '', date: dayISO(d), time: `${pad(d.getHours())}:00`, travel: 30, prep: 15 };
+}
+
+/* ---------- Alarms ---------- */
+let actx = null;
+function ensureAudio() {
+  try {
+    if (!actx) { const C = window.AudioContext || window.webkitAudioContext; if (C) actx = new C(); }
+    if (actx && actx.state === 'suspended') actx.resume();
+  } catch (e) {}
+}
+function chime() {
+  if (actx && state.settings.sound) {
+    try {
+      const t0 = actx.currentTime;
+      for (let i = 0; i < 3; i++) {
+        const o = actx.createOscillator(), g = actx.createGain(), s = t0 + i * 0.4;
+        o.type = 'sine'; o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(0.25, s + 0.015);
+        g.gain.setValueAtTime(0.25, s + 0.22); g.gain.exponentialRampToValueAtTime(0.0001, s + 0.26);
+        o.connect(g); g.connect(actx.destination); o.start(s); o.stop(s + 0.27);
+      }
+    } catch (e) {}
+  }
+  try { navigator.vibrate && navigator.vibrate([200, 120, 200]); } catch (e) {}
+}
+const canNotify = () => 'Notification' in window && window.isSecureContext;
+function notify(msg) {
+  if (!canNotify() || Notification.permission !== 'granted' || !document.hidden) return;
+  try { new Notification('External Brain', { body: msg, tag: 'external-brain' }); } catch (e) {}
+}
+let wl = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wl && navigator.wakeLock) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); }
+    else if (!on && wl) { await wl.release(); wl = null; }
+  } catch (e) {}
+}
+function checkAlarms() {
+  const t = now(); let msg = null, changed = false;
+  const tm = state.timer;
+  if (tm && !tm.notified && t >= tm.end) {
+    tm.notified = changed = true; keepAwake(false);
+    msg = `${tm.label} is done. ${AFTER[tm.kind][0]}`;
+  }
+  const ev = state.event;
+  if (ev) {
+    const { wrap, leave } = eventTimes(ev);
+    [['wrap', wrap, `Time to wrap up. Leave at ${clock(leave)}.`], ['leave', leave, `Time to leave for ${ev.title}.`]].forEach(([k, ts, m]) => {
+      if (!ev.fired.includes(k) && t >= ts) {
+        ev.fired.push(k); changed = true;
+        if (t - ts < 180000) msg = m;  // stay quiet about alarms that passed while the page was closed
+      }
+    });
+  }
+  if (changed) save();
+  if (msg) { ui.alarm = msg; chime(); notify(msg); renderAlarm(); }
+}
+
+/* ---------- Theme ---------- */
+const root = document.documentElement;
+function applyTheme() {
+  const t = state.settings.theme;
+  if (t === 'light' || t === 'dark') root.setAttribute('data-theme', t);
+  else root.removeAttribute('data-theme');
+}
+const THEME_ICONS = {
+  light: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.13 1.13M11.67 11.67l1.13 1.13M12.8 3.2l-1.13 1.13M4.33 11.67L3.2 12.8"/></svg>',
+  dark: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.2 10.1A5.8 5.8 0 0 1 5.9 2.8a5.9 5.9 0 1 0 7.3 7.3z"/></svg>',
+  system: '<svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.4" fill="none"/><path d="M8 2.6a5.4 5.4 0 0 1 0 10.8z" fill="currentColor" stroke="none"/></svg>'
+};
+
+/* ---------- Views ---------- */
+function viewToday() {
+  const f = focusTask(), open = openTasks(), today = todayTasks();
+  const nDone = state.tasks.length - open.length;
+  const samples = state.tasks.filter(t => t.sample);
+  const showAdd = ui.addOpen || open.length === 0;
+  const ordered = [...today, ...open.filter(t => !today.includes(t))];
+  const full = today.length >= MAX_TODAY;
+  const row = t => {
+    const n = today.indexOf(t) + 1;
+    return `<div class="trow">
+      <button class="pick${n ? ' on' : ''}" type="button" data-action="pick" data-id="${t.id}" aria-pressed="${n > 0}" aria-label="${n ? `Today #${n}. Remove ${esc(t.title)} from today` : `Add ${esc(t.title)} to today`}"${!n && full ? ' disabled' : ''}>${n || '+'}</button>
+      <div><div class="row-title">${esc(t.title)}</div>${n === 1 ? '<div class="row-meta">Now</div>' : ''}</div>
+      <button class="x" type="button" data-action="delete" data-id="${t.id}" aria-label="Delete ${esc(t.title)}">×</button>
+    </div>`;
+  };
+  return `
+    ${!storageOK ? `<div class="banner"><span>This browser is blocking storage, so tasks will be lost when you close the page.</span></div>` : ''}
+    ${samples.length ? `<div class="banner"><span>${samples.length === 1 ? 'One task is a sample' : `${samples.length} tasks are samples`} to show how it works.</span><button class="btn sm" type="button" data-action="clear-samples">Clear samples</button></div>` : ''}
+    <section class="face">
+      ${f ? `
+        <div class="face-top"><div><div class="eyebrow">Now</div><h1 class="plate-name">${esc(f.title)}</h1></div><span class="state on">Today 1 of ${today.length}</span></div>
+        <div class="field"><label for="next">Next step · start it in 30 seconds</label>
+          <input class="inp" id="next" data-next="${f.id}" value="${esc(f.next)}" placeholder="e.g. Open the invoice file" autocomplete="off"></div>
+        <div class="controls">
+          <button class="btn primary" type="button" data-action="timer" data-key="start2">2-min start</button>
+          <button class="btn" type="button" data-action="done" data-id="${f.id}">Done</button>
+        </div>` : `
+        <div class="eyebrow">Now</div>
+        <h1 class="plate-name idle">Nothing picked yet</h1>
+        <p class="hint" style="margin-top:8px">${open.length ? `Tap <b>+</b> next to a task to put it on today. The first one you add becomes Now.` : `Start by writing down what's on your mind.`}</p>`}
+    </section>
+    <section class="sec">
+      <div class="sec-head"><span class="eyebrow">Tasks</span><span class="num">${today.length} of ${MAX_TODAY} today</span></div>
+      ${open.length ? `<div class="panel">${ordered.map(row).join('')}</div>` : ''}
+      ${showAdd ? `
+        <div class="panel" style="${open.length ? 'margin-top:12px' : ''}">
+          <div class="field first"><label for="draft">Add tasks · one per line</label>
+            <textarea class="inp" id="draft" rows="4" placeholder="e.g.&#10;Send the invoice&#10;Laundry&#10;Book the dentist">${esc(state.draft)}</textarea></div>
+          <p class="hint" style="margin-top:8px">Write everything down, but stop after 10 minutes.</p>
+          <div class="controls"><button class="btn primary" type="button" data-action="add">Add</button>${open.length ? '<button class="btn" type="button" data-action="add-close">Cancel</button>' : ''}</div>
+        </div>` : ''}
+      <div class="controls" style="margin-top:12px">
+        ${showAdd ? '' : '<button class="btn primary" type="button" data-action="add-open">Add tasks</button>'}
+        ${nDone ? `<button class="btn" type="button" data-action="clear-done">Clear ${nDone} finished</button>` : ''}
+      </div>
+      ${open.length ? `<p class="hint" style="margin-top:12px">Tip: make one of today's tasks quick, so you get moving.</p>` : ''}
+    </section>`;
+}
+
+function wedge(f) {
+  const c = 100, r = 90;
+  if (f <= 0.001) return '';
+  if (f >= 0.999) return `M${c} ${c - r}A${r} ${r} 0 1 1 ${c} ${c + r}A${r} ${r} 0 1 1 ${c} ${c - r}Z`;
+  const a = f * 2 * Math.PI, x = (c + r * Math.sin(a)).toFixed(2), y = (c - r * Math.cos(a)).toFixed(2);
+  return `M${c} ${c}L${c} ${c - r}A${r} ${r} 0 ${f > 0.5 ? 1 : 0} 1 ${x} ${y}Z`;
+}
+function timerNums(t = now()) {
+  const tm = state.timer;
+  if (!tm) return { frac: 0, big: '0:00' };
+  const left = Math.max(0, tm.end - t);
+  return { frac: left / Math.max(1, tm.end - tm.start), big: mmss(left) };
+}
+function viewTimer() {
+  const tm = state.timer, t = now(), running = timerRunning(t), n = timerNums(t), f = focusTask();
+  let ticks = '';
+  for (let i = 0; i < 12; i++) {
+    const a = i * Math.PI / 6;
+    ticks += `<line class="tk" x1="${(100 + 82 * Math.sin(a)).toFixed(1)}" y1="${(100 - 82 * Math.cos(a)).toFixed(1)}" x2="${(100 + 94 * Math.sin(a)).toFixed(1)}" y2="${(100 - 94 * Math.cos(a)).toFixed(1)}"/>`;
+  }
+  let controls;
+  if (running) {
+    controls = `<div class="controls"><button class="btn" type="button" data-action="add5">+5 min</button><button class="btn primary" type="button" data-action="stop">Stop</button></div>`;
+  } else if (tm) {
+    const [msg, nx] = AFTER[tm.kind];
+    controls = `<p class="after">${esc(msg)}</p>
+      <div class="controls">${nx ? `<button class="btn primary" type="button" data-action="timer" data-key="${nx}">${esc(TIMERS[nx][0])}</button>` : ''}<button class="btn" type="button" data-action="stop">Close</button></div>`;
+  } else {
+    controls = `<div class="presets">${TIMER_BUTTONS.map(k => `<button class="btn${k === 'start2' ? ' primary' : ''}" type="button" data-action="timer" data-key="${k}">${esc(TIMERS[k][0])}</button>`).join('')}</div>
+      <div class="custom"><label for="custom-min">Custom</label><input class="inp" type="number" id="custom-min" min="1" max="180" value="10" inputmode="numeric"><span>min</span><button class="btn sm" type="button" data-action="custom">Start</button></div>`;
+  }
+  if (!ui.form) ui.form = formDefaults();
+  const fm = ui.form, ev = state.event;
+  let evPanel = '';
+  if (ev) {
+    const { wrap, leave, start } = eventTimes(ev), ph = evPhase(t);
+    evPanel = `
+      <div class="panel" style="margin-top:12px">
+        <div class="face-top"><div><div class="eyebrow">${esc(dayLabel(start))}</div><div class="plate-name" style="font-size:18px">${esc(ev.title)}</div></div><button class="linkbtn" type="button" data-action="clear-event">Clear</button></div>
+        <div class="times" style="margin-top:14px">
+          <div><div class="eyebrow">1 · Wrap up</div><div class="t-val">${clock(wrap)}</div></div>
+          <div><div class="eyebrow">2 · Leave</div><div class="t-val">${clock(leave)}</div></div>
+          <div><div class="eyebrow">Starts</div><div class="t-val">${clock(start)}</div></div>
+        </div>
+        <p class="ev-state ${ph === 'wrap' ? 'warn' : ph === 'leave' ? 'late' : ''}" data-live="ev-state">${esc(evText(t))}</p>
+      </div>`;
+  }
+  return `
+    <section class="face">
+      <div class="face-top">
+        <div><div class="eyebrow">Timer</div><div class="plate-sub">${f ? `Now: ${esc(f.title)}` : 'No Now task picked'}</div></div>
+        <span class="state ${running ? 'on' : tm ? 'done' : ''}">${running ? 'Running' : tm ? 'Done' : 'Ready'}</span>
+      </div>
+      <div class="disc-wrap"><svg class="disc" viewBox="0 0 200 200" role="img" aria-label="Time left"><circle class="face-c" cx="100" cy="100" r="96"/><path class="wedge" id="wedge" d="${wedge(n.frac)}"/>${ticks}</svg></div>
+      <div class="clock${tm ? '' : ' idle'}" data-live="t-left">${tm ? n.big : '0:00'}</div>
+      <div class="clock-note">${tm ? esc(tm.label) : 'Pick a timer'}</div>
+      ${controls}
+      <p class="hint" style="margin-top:16px;text-align:center">Alarms ring only while this page is open.</p>
+    </section>
+    <section class="sec" id="leave">
+      <div class="sec-head"><span class="eyebrow">Leave on time</span></div>
+      <div class="panel">
+        <p class="hint">Plan around when you leave, not when it starts. Keep working until the first alarm.</p>
+        <div class="field"><label for="ev-title">What</label><input class="inp" id="ev-title" data-form="title" value="${esc(fm.title)}" placeholder="e.g. Soccer" autocomplete="off"></div>
+        <div class="grid2">
+          <div class="field"><label for="ev-date">Date</label><input class="inp" type="date" id="ev-date" data-form="date" value="${esc(fm.date)}"></div>
+          <div class="field"><label for="ev-time">Starts at</label><input class="inp" type="time" id="ev-time" data-form="time" step="300" value="${esc(fm.time)}"></div>
+          <div class="field"><label for="ev-travel">Travel (min)</label><input class="inp" type="number" id="ev-travel" data-form="travel" min="0" max="600" step="5" inputmode="numeric" value="${esc(fm.travel)}"></div>
+          <div class="field"><label for="ev-prep">Get ready (min)</label><input class="inp" type="number" id="ev-prep" data-form="prep" min="0" max="240" step="5" inputmode="numeric" value="${esc(fm.prep)}"></div>
+        </div>
+        <div class="controls"><button class="btn primary" type="button" data-action="set-event">Set alarms</button></div>
+        ${ui.formErr ? `<p class="err" role="alert">${esc(ui.formErr)}</p>` : ''}
+      </div>
+      ${evPanel}
+    </section>`;
+}
+function evText(t = now()) {
+  const ev = state.event; if (!ev) return '';
+  const { wrap, leave, start } = eventTimes(ev), ph = evPhase(t);
+  return ph === 'before' ? `Work freely for ${dur(wrap - t)}.` : ph === 'wrap' ? `Wrap up now. Leave in ${dur(leave - t)}.` : ph === 'leave' ? `Time to leave. It starts in ${dur(start - t)}.` : 'This appointment has started.';
+}
+
+function viewStuck() {
+  const s = ui.sit != null ? SITUATIONS[ui.sit] : null;
+  return `
+    <section>
+      <div class="eyebrow">Stuck?</div>
+      <h1 class="plate-name">What's going on?</h1>
+      <div class="chips">${SITUATIONS.map((x, i) => `<button class="chip" type="button" data-action="sit" data-i="${i}" aria-pressed="${ui.sit === i}">${esc(x.label)}</button>`).join('')}</div>
+    </section>
+    ${s ? `
+      <section class="face" style="margin-top:16px">
+        <div class="eyebrow">${esc(s.terms)}</div>
+        <p class="why">${esc(s.why)}</p>
+        <ol class="steps">${s.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+        <div class="controls">${s.buttons.map(([l, k, t], i) => `<button class="btn${i === 0 ? ' primary' : ''}" type="button" data-action="run" data-kind="${k}" data-target="${t}">${esc(l)}</button>`).join('')}</div>
+      </section>` : ''}
+    <section class="sec">
+      <div class="sec-head"><span class="eyebrow">More tips</span></div>
+      <div class="panel">${MORE_TIPS.map(([title, term, tip]) => `<div class="tip"><b>${esc(title)}</b> <span class="hint">· ${esc(term)}</span><p class="hint" style="color:var(--ink-2);margin-top:3px">${esc(tip)}</p></div>`).join('')}</div>
+    </section>`;
+}
+
+function backupPanel() {
+  const pending = ui.restorePending;
+  return `
+    <div class="panel">
+      <div class="face-top"><span class="eyebrow">Backup and restore</span><button class="linkbtn" type="button" data-action="backup-toggle">Close</button></div>
+      <p class="hint" style="margin-top:6px">Your data is saved in this browser only. Copy a backup to keep it safe or to move it to another device.</p>
+      <div class="controls" style="margin-top:14px"><button class="btn sm" type="button" data-action="copy-backup">Copy backup</button></div>
+      <div class="field"><label for="backup-in">Paste a backup to restore it</label><textarea class="inp backup-in" id="backup-in" rows="4" spellcheck="false" placeholder='{"tasks":[ ... ]}'>${esc(ui.backupText)}</textarea></div>
+      ${pending
+        ? `<div class="confirm" role="alert"><span>Replace your ${plural(state.tasks.length, 'task')} with the ${plural(pending.tasks.length, 'task')} in this backup?</span><div class="controls"><button class="btn sm primary" type="button" data-action="restore">Replace</button><button class="btn sm" type="button" data-action="cancel-restore">Keep current</button></div></div>`
+        : `<div class="controls" style="margin-top:12px"><button class="btn sm" type="button" data-action="ask-restore">Restore</button></div>`}
+      <p class="hint" id="backup-msg" style="margin-top:10px" aria-live="polite">${esc(ui.backupMsg)}</p>
+    </div>`;
+}
+
+/* ---------- Rendering ---------- */
+let sig = '';
+function renderAlarm() {
+  $('#alarm').innerHTML = ui.alarm ? `<div class="banner ring" role="alert"><span>${esc(ui.alarm)}</span><button class="btn sm" type="button" data-action="ok">OK</button></div>` : '';
+}
+function renderStrips(r) {
+  const t = now(), tm = state.timer, ev = state.event, out = [];
+  if (tm && r !== 'timer') {
+    const running = timerRunning(t);
+    out.push(`<div class="runbar">
+      <span class="runbar-dot" aria-hidden="true"${running ? '' : ' style="animation:none;background:var(--amber)"'}></span>
+      <a class="runbar-what" href="#timer"><span class="runbar-name">${esc(tm.label)}</span></a>
+      <span class="runbar-time" data-live="t-left">${running ? mmss(tm.end - t) : 'Done'}</span>
+      <button class="runbar-btn" type="button" data-action="stop">${running ? 'Stop' : 'Close'}</button>
+    </div>`);
+  }
+  const ph = evPhase(t);
+  if (ev && r !== 'timer' && ph !== 'past') {
+    const { leave } = eventTimes(ev);
+    out.push(`<div class="runbar ev${ph === 'wrap' ? ' warn' : ph === 'leave' ? ' late' : ''}">
+      <span class="runbar-dot" aria-hidden="true"></span>
+      <a class="runbar-what" href="#timer"><span class="runbar-name">${esc(ev.title)}</span><span class="runbar-sub">leave ${clock(leave)}</span></a>
+      <span class="runbar-time" data-live="ev-short">${esc(evShort(t))}</span>
+    </div>`);
+  }
+  $('#strips').innerHTML = out.join('');
+}
+function evShort(t = now()) {
+  const ev = state.event; if (!ev) return '';
+  const { wrap, leave } = eventTimes(ev), ph = evPhase(t);
+  return ph === 'before' ? `wrap up in ${dur(wrap - t)}` : ph === 'wrap' ? `leave in ${dur(leave - t)}` : ph === 'leave' ? 'leave now' : '';
+}
+function renderChrome(r) {
+  const tabs = [['today', 'Today'], ['timer', 'Timer'], ['stuck', 'Stuck?']];
+  $('#topbar').innerHTML = `
+    <a class="mark" href="#today">External Brain</a>
+    <nav class="tabs" aria-label="Screens">${tabs.map(([k, l]) => `<a class="tab${r === k ? ' on' : ''}" href="#${k}"${r === k ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</nav>`;
+  renderStrips(r);
+  const th = state.settings.theme || 'system';
+  const opts = [['light', 'Day'], ['dark', 'Night'], ['system', 'Auto: match this device']];
+  let notif = '';
+  if (canNotify()) {
+    notif = Notification.permission === 'granted' ? '<span>Notifications on</span>'
+      : Notification.permission === 'denied' ? '<span>Notifications are blocked in browser settings</span>'
+      : '<button class="linkbtn" type="button" data-action="notify-on">Turn on notifications</button>';
+  }
+  $('#foot').innerHTML = `
+    ${ui.backupOpen ? backupPanel() : ''}
+    <div class="theme" role="radiogroup" aria-label="Theme">
+      ${opts.map(([k, label]) => `<button class="theme-btn${th === k ? ' on' : ''}" type="button" role="radio" aria-checked="${th === k}" aria-label="${label}" title="${label}" data-action="theme" data-theme-choice="${k}">${THEME_ICONS[k]}</button>`).join('')}
+    </div>
+    <div class="foot-row">
+      <label class="check" for="sound"><input type="checkbox" id="sound"${state.settings.sound ? ' checked' : ''}> Sound</label>
+      ${notif}
+      ${ui.backupOpen ? '' : '<button class="linkbtn" type="button" data-action="backup-toggle">Backup and restore</button>'}
+    </div>`;
+}
+function render() {
+  const r = route();
+  renderAlarm();
+  renderChrome(r);
+  $('#view').innerHTML = r === 'timer' ? viewTimer() : r === 'stuck' ? viewStuck() : viewToday();
+  sig = signature();
+  updateTitle();
+}
+function signature(t = now()) { return `${route()}|${state.timer ? (timerRunning(t) ? 'run' : 'done') : 'none'}|${evPhase(t)}`; }
+function updateTitle(t = now()) {
+  const tm = state.timer;
+  document.title = tm && timerRunning(t) ? `${mmss(tm.end - t)} · ${tm.label}` : tm ? `Done · ${tm.label}` : 'External Brain';
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = $('#toast'); el.textContent = msg; el.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, msg.length > 40 ? 4500 : 2600);
+}
+
+/* ---------- Backup ---------- */
+function setBackupMsg(m) { ui.backupMsg = m; const el = $('#backup-msg'); if (el) el.textContent = m; }
+function copyBackup() {
+  const json = JSON.stringify(state, null, 2);
+  const fallback = () => {
+    ui.backupText = json;
+    const ta = $('#backup-in'); if (ta) { ta.value = json; ta.focus(); ta.select(); }
+    setBackupMsg('Clipboard is blocked here. The backup is selected in the box above; copy it with Ctrl+C or ⌘C.');
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(json).then(() => setBackupMsg(`Copied ${plural(state.tasks.length, 'task')}.`), fallback);
+    } else fallback();
+  } catch (e) { fallback(); }
+}
+function askRestore() {
+  const raw = ($('#backup-in')?.value || '').trim();
+  ui.backupText = raw;
+  if (!raw) { setBackupMsg('Paste the text from Copy backup first.'); return; }
+  try {
+    const d = JSON.parse(raw);
+    if (!valid(d)) throw new Error('shape');
+    ui.restorePending = d; ui.backupMsg = ''; render();
+  } catch (e) { setBackupMsg("That text isn't an External Brain backup. Paste the full text from Copy backup."); }
+}
+
+/* ---------- Events ---------- */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-action]'); if (!b || b.disabled) return;
+  ensureAudio();
+  const d = b.dataset;
+  switch (d.action) {
+    case 'pick': togglePick(d.id); break;
+    case 'done': finishTask(d.id); break;
+    case 'delete': deleteTask(d.id); break;
+    case 'add': addTasks(); break;
+    case 'add-open': ui.addOpen = true; render(); $('#draft')?.focus(); break;
+    case 'add-close': ui.addOpen = false; render(); break;
+    case 'clear-done': state.tasks = openTasks(); save(); render(); break;
+    case 'clear-samples': state.tasks = state.tasks.filter(t => !t.sample); cleanToday(); save(); render(); toast('Samples cleared.'); break;
+    case 'timer': startTimer(d.key); break;
+    case 'custom': startCustom(); break;
+    case 'add5': if (state.timer) { state.timer.end = Math.max(state.timer.end, now()) + 5 * 60000; state.timer.notified = false; ui.alarm = null; save(); keepAwake(true); render(); } break;
+    case 'stop': state.timer = null; ui.alarm = null; save(); keepAwake(false); render(); break;
+    case 'ok': ui.alarm = null; renderAlarm(); break;
+    case 'set-event': setEvent(); break;
+    case 'clear-event': state.event = null; ui.form = null; save(); render(); break;
+    case 'sit': { const i = Number(d.i); ui.sit = ui.sit === i ? null : i; render(); break; }
+    case 'run': if (d.kind === 'timer') startTimer(d.target); else go(d.target); break;
+    case 'theme': state.settings.theme = d.themeChoice; applyTheme(); save(); renderChrome(route()); break;
+    case 'notify-on': try { Notification.requestPermission().then(() => renderChrome(route())); } catch (err) {} break;
+    case 'backup-toggle': ui.backupOpen = !ui.backupOpen; ui.restorePending = null; ui.backupMsg = ''; renderChrome(route()); if (ui.backupOpen) $('#foot .panel')?.scrollIntoView({ block: 'nearest' }); break;
+    case 'copy-backup': copyBackup(); break;
+    case 'ask-restore': askRestore(); break;
+    case 'cancel-restore': ui.restorePending = null; renderChrome(route()); break;
+    case 'restore':
+      if (ui.restorePending) {
+        state = normalize(ui.restorePending); ui.restorePending = null; ui.backupText = ''; ui.backupMsg = 'Restored.'; ui.form = null;
+        save(); applyTheme(); render();
+      }
+      break;
+  }
+});
+let draftTimer = null;
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el.id === 'draft') { state.draft = el.value; clearTimeout(draftTimer); draftTimer = setTimeout(save, 400); }
+  else if (el.dataset.next) { const t = taskBy(el.dataset.next); if (t) { t.next = el.value; save(); } }
+  else if (el.dataset.form && ui.form) { ui.form[el.dataset.form] = el.value; }
+  else if (el.id === 'backup-in') { ui.backupText = el.value; }
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'sound') { state.settings.sound = e.target.checked; save(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.id === 'next') e.target.blur();
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.target.id === 'draft') addTasks();
+});
+window.addEventListener('storage', e => {  // another tab changed the data
+  if (e.key !== KEY || !e.newValue) return;
+  try { const d = JSON.parse(e.newValue); if (valid(d)) { state = normalize(d); render(); } } catch (err) {}
+});
+
+/* ---------- Clock ---------- */
+function tick() {
+  const t = now();
+  checkAlarms();
+  if (signature(t) !== sig) { render(); return; }
+  const tm = state.timer;
+  if (tm) {
+    const n = timerNums(t);
+    document.querySelectorAll('[data-live="t-left"]').forEach(el => { el.textContent = timerRunning(t) ? n.big : (route() === 'timer' ? '0:00' : 'Done'); });
+    const w = $('#wedge'); if (w) w.setAttribute('d', wedge(n.frac));
+  }
+  if (state.event) {
+    const a = $('[data-live="ev-state"]'); if (a) a.textContent = evText(t);
+    const b = $('[data-live="ev-short"]'); if (b) b.textContent = evShort(t);
+  }
+  updateTitle(t);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { tick(); if (timerRunning()) keepAwake(true); } });
+
+applyTheme();
+render();
+setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>
